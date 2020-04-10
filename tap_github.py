@@ -12,6 +12,10 @@ from singer import metadata
 session = requests.Session()
 logger = singer.get_logger()
 github_api_endpoint = 'https://api.github.com'
+table_prefix = ''
+
+def make_schama_name(name):
+    return "{}{}".format(table_prefix, name)
 
 REQUIRED_CONFIG_KEYS = ['access_token', 'repository']
 
@@ -301,7 +305,7 @@ def get_all_events(schemas, repo_path, state, mdata):
     else:
         bookmark_time = 0
 
-    with metrics.record_counter('events') as counter:
+    with metrics.record_counter(make_schama_name('events')) as counter:
         for response in authed_get_all_pages(
                 'events',
                 'https://api.github.com/repos/{}/events?sort=created_at&direction=desc'.format(repo_path)
@@ -322,8 +326,8 @@ def get_all_events(schemas, repo_path, state, mdata):
                 # transform and write release record
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(r, schemas, metadata=metadata.to_map(mdata))
-                singer.write_record('events', rec, time_extracted=extraction_time)
-                singer.write_bookmark(state, repo_path, 'events', {'since': singer.utils.strftime(extraction_time)})
+                singer.write_record(make_schama_name('events'), rec, time_extracted=extraction_time)
+                singer.write_bookmark(state, repo_path, make_schama_name('events'), {'since': singer.utils.strftime(extraction_time)})
                 counter.increment()
 
     return state
@@ -569,7 +573,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata):
     else:
         bookmark_time = 0
 
-    with metrics.record_counter('pull_requests') as counter:
+    with metrics.record_counter(make_schama_name('pull_requests')) as counter:
         with metrics.record_counter('reviews') as reviews_counter:
             for response in authed_get_all_pages(
                     'pull_requests',
@@ -594,8 +598,8 @@ def get_all_pull_requests(schemas, repo_path, state, mdata):
                     # transform and write pull_request record
                     with singer.Transformer() as transformer:
                         rec = transformer.transform(pr, schemas['pull_requests'], metadata=metadata.to_map(mdata))
-                    singer.write_record('pull_requests', rec, time_extracted=extraction_time)
-                    singer.write_bookmark(state, repo_path, 'pull_requests', {'since': singer.utils.strftime(extraction_time)})
+                    singer.write_record(make_schama_name('pull_requests'), rec, time_extracted=extraction_time)
+                    singer.write_bookmark(state, repo_path, make_schama_name('pull_requests'), {'since': singer.utils.strftime(extraction_time)})
                     counter.increment()
 
                     # sync reviews if that schema is present (only there if selected)
@@ -761,7 +765,7 @@ def get_all_issues(schema, repo_path,  state, mdata):
         query_string = ''
 
     last_issue_time = None
-    with metrics.record_counter('issues') as counter:
+    with metrics.record_counter(make_schama_name('issues')) as counter:
         for response in authed_get_all_pages(
                 'issues',
                 '{}/repos/{}/issues?state=all&sort=updated&direction=asc{}'.format(github_api_endpoint, repo_path, query_string)
@@ -772,8 +776,8 @@ def get_all_issues(schema, repo_path,  state, mdata):
                 issue['_sdc_repository'] = repo_path
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(issue, schema, metadata=metadata.to_map(mdata))
-                singer.write_record('issues', rec, time_extracted=extraction_time)
-                singer.write_bookmark(state, repo_path, 'issues', {'since': singer.utils.strftime(extraction_time)})
+                singer.write_record(make_schama_name('issues'), rec, time_extracted=extraction_time)
+                singer.write_bookmark(state, repo_path, make_schama_name('issues'), {'since': singer.utils.strftime(extraction_time)})
                 counter.increment()
     return state
 
@@ -789,7 +793,7 @@ def get_all_comments(schema, repo_path, state, mdata):
         query_string = ''
 
     last_comment_time = None
-    with metrics.record_counter('comments') as counter:
+    with metrics.record_counter(make_schama_name('comments')) as counter:
         for response in authed_get_all_pages(
                 'comments',
                 '{}/repos/{}/issues/comments?sort=updated&direction=asc{}'.format(github_api_endpoint, repo_path, query_string)
@@ -800,8 +804,8 @@ def get_all_comments(schema, repo_path, state, mdata):
                 comment['_sdc_repository'] = repo_path
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(comment, schema, metadata=metadata.to_map(mdata))
-                singer.write_record('comments', rec, time_extracted=extraction_time)
-                singer.write_bookmark(state, repo_path, 'comments', {'since': singer.utils.strftime(extraction_time)})
+                singer.write_record(make_schama_name('comments'), rec, time_extracted=extraction_time)
+                singer.write_bookmark(state, repo_path, make_schama_name('comments'), {'since': singer.utils.strftime(extraction_time)})
                 counter.increment()
     return state
 
@@ -909,7 +913,7 @@ def do_sync(config, state, catalog):
 
             # if stream is selected, write schema and sync
             if stream_id in selected_stream_ids:
-                singer.write_schema(stream_id, stream_schema, stream['key_properties'])
+                singer.write_schema(make_schama_name(stream_id), stream_schema, stream['key_properties'])
 
                 # get sync function and any sub streams
                 sync_func = SYNC_FUNCTIONS[stream_id]
@@ -939,6 +943,7 @@ def do_sync(config, state, catalog):
 @singer.utils.handle_top_exception(logger)
 def main():
     global github_api_endpoint
+    global table_prefix
     args = singer.utils.parse_args(REQUIRED_CONFIG_KEYS)
 
     if args.discover:
@@ -947,6 +952,8 @@ def main():
         catalog = args.properties if args.properties else get_catalog()
         if 'api_endpoint' in args.config:
             github_api_endpoint = args.config['api_endpoint']
+        if 'table_prefix' in args.config:
+            table_prefix = args.config['table_prefix']
         do_sync(args.config, args.state, catalog)
 
 if __name__ == '__main__':
