@@ -6,6 +6,7 @@ import singer
 import singer.bookmarks as bookmarks
 import singer.metrics as metrics
 import collections
+from datetime import datetime, timedelta, timezone
 
 from singer import metadata
 
@@ -13,6 +14,7 @@ session = requests.Session()
 logger = singer.get_logger()
 github_api_endpoint = 'https://api.github.com'
 table_prefix = ''
+comments_since = ''
 
 def make_schama_name(name):
     return "{}{}".format(table_prefix, name)
@@ -403,9 +405,11 @@ def get_all_commit_comments(schemas, repo_path, state, mdata):
         bookmark_time = 0
 
     with metrics.record_counter('commit_comments') as counter:
+        full_url = 'https://api.github.com/repos/{}/comments?sort=created_at&direction=desc'.format(repo_path)
+        if comments_since != '':
+            full_url += '&since={}'.format(comments_since)
         for response in authed_get_all_pages(
-                'commit_comments',
-                'https://api.github.com/repos/{}/comments?sort=created_at&direction=desc'.format(repo_path)
+                'commit_comments', full_url
         ):
             commit_comments = response.json()
             extraction_time = singer.utils.now()
@@ -791,6 +795,8 @@ def get_all_comments(schema, repo_path, state, mdata):
         query_string = '&since={}'.format(bookmark)
     else:
         query_string = ''
+    if comments_since != '':
+        query_string = '&since={}'.format(comments_since)
 
     last_comment_time = None
     with metrics.record_counter(make_schama_name('comments')) as counter:
@@ -944,6 +950,7 @@ def do_sync(config, state, catalog):
 def main():
     global github_api_endpoint
     global table_prefix
+    global comments_since
     args = singer.utils.parse_args(REQUIRED_CONFIG_KEYS)
 
     if args.discover:
@@ -954,6 +961,10 @@ def main():
             github_api_endpoint = args.config['api_endpoint']
         if 'table_prefix' in args.config:
             table_prefix = args.config['table_prefix']
+        if 'comment_limit_1year' in args.config:
+            dt_since = datetime.now(timezone.utc) - timedelta(days=365)
+            comments_since = dt_since.strftime("%Y-%m-%dT%S:%M:%SZ")
+
         do_sync(args.config, args.state, catalog)
 
 if __name__ == '__main__':
