@@ -963,7 +963,7 @@ def main():
             table_prefix = args.config['table_prefix']
         if 'comment_limit_1year' in args.config:
             dt_since = datetime.now(timezone.utc) - timedelta(days=365)
-            comments_since = dt_since.strftime("%Y-%m-%dT%S:%M:%SZ")
+            comments_since = dt_since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         do_sync(args.config, args.state, catalog)
 
